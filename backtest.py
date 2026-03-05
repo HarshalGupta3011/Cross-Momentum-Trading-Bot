@@ -39,8 +39,8 @@ try:
     logger.info("✓ Loaded credentials from config.py")
 except ImportError:
     pass  # falls back to values hardcoded below
-    KITE_API_KEY    = KITE_API_KEY    if 'KITE_API_KEY'    in dir() else "your_api_key_here"
-    KITE_API_SECRET = KITE_API_SECRET if 'KITE_API_SECRET' in dir() else "your_api_secret_here"
+KITE_API_KEY    = KITE_API_KEY    if 'KITE_API_KEY'    in dir() else "your_api_key_here"
+KITE_API_SECRET = KITE_API_SECRET if 'KITE_API_SECRET' in dir() else "your_api_secret_here"
 START_DATE      = "2021-01-01"
 END_DATE        = "today"       # auto uses today's date
 
