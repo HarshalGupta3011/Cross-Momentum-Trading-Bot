@@ -137,9 +137,15 @@ All activity is logged to the `logs/` directory:
 
 - **bot.log** — timestamped log of every action the bot takes
 - **orders.csv** — record of every order with order_id, status, errors
+
 - **portfolio.csv** — monthly portfolio snapshots (symbol, qty, price, value)
 
 ---
+## Backtest 
+ <img width="1984" height="1287" alt="equity_drawdown" src="https://github.com/user-attachments/assets/020ceed7-9468-455c-ab36-3d163c2b9ea2" />
+ <img width="1657" height="657" alt="stats_table" src="https://github.com/user-attachments/assets/e3f769f2-499a-4c13-8a05-f69fe48e6eea" />
+
+
 
 ## Disclaimer
 
