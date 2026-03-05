@@ -142,8 +142,9 @@ All activity is logged to the `logs/` directory:
 
 ---
 ## Backtest 
- <img width="1984" height="1287" alt="equity_drawdown" src="https://github.com/user-attachments/assets/020ceed7-9468-455c-ab36-3d163c2b9ea2" />
- <img width="1657" height="657" alt="stats_table" src="https://github.com/user-attachments/assets/e3f769f2-499a-4c13-8a05-f69fe48e6eea" />
+<img width="1972" height="1287" alt="equity_drawdown" src="https://github.com/user-attachments/assets/6ed7298b-c831-457d-bfb7-5c11072173b6" />
+
+<img width="1657" height="657" alt="stats_table" src="https://github.com/user-attachments/assets/fc204d87-2675-454b-84d2-7725271002ba" />
 
 
 
