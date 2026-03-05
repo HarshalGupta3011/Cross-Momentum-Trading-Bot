@@ -65,7 +65,7 @@ TOTAL_COST_PCT  = BROKERAGE_PCT + STT_PCT + IMPACT_COST_PCT
 NIFTY50_TOKEN   = 256265        # Standard Kite token for NIFTY 50 index
 OUTPUT_DIR      = "backtest_results"
 CACHE_DIR       = os.path.join(OUTPUT_DIR, "cache")
-"""""
+"""
 UNIVERSE = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
     "BHARTIARTL","SBIN","WIPRO","HCLTECH","LT",
