@@ -130,6 +130,135 @@ The bot has built-in safeguards:
 | Market hours guard | 9:15–15:30 | Won't place orders outside NSE hours |
 
 ---
+## AWS EC2 Deployment
+
+Running the bot on AWS EC2 keeps it running 24/7 independently of your local machine — closing your laptop has no effect on the bot.
+
+### 1. Launch an EC2 Instance
+1. Go to [AWS Console](https://console.aws.amazon.com) → **EC2 → Launch Instance**
+2. Configure:
+   - **Name**: `momentum-bot`
+   - **OS**: Ubuntu 24.04 LTS
+   - **Instance type**: `t2.micro` (free tier eligible)
+   - **Key pair**: Click **Create new key pair** → name it `momentum-key` → download the `.pem` file and save it safely
+   - **Security group**: Allow SSH (port 22)
+3. Click **Launch Instance**
+
+### 2. Connect to Your Instance
+```bash
+# Mac / Linux
+chmod 400 momentum-key.pem
+ssh -i "momentum-key.pem" ubuntu@YOUR_EC2_PUBLIC_IP
+
+# Windows (PowerShell)
+ssh -i "momentum-key.pem" ubuntu@YOUR_EC2_PUBLIC_IP
+```
+> Find your public IP in EC2 dashboard → Instances → **Public IPv4 address**
+
+### 3. Set Up the Server
+```bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Python and tools
+sudo apt install python3 python3-pip screen zip unzip -y
+
+# Set timezone to IST (critical for scheduler)
+sudo timedatectl set-timezone Asia/Kolkata
+timedatectl   # verify it shows Asia/Kolkata
+```
+
+### 4. Upload Bot Files
+```bash
+# Run this on your LOCAL machine (not the VPS)
+scp -i "momentum-key.pem" zerodha_momentum_bot.zip ubuntu@YOUR_EC2_PUBLIC_IP:~/
+```
+
+```bash
+# Back on the VPS — extract files
+cd ~
+unzip zerodha_momentum_bot.zip
+cd zerodha_momentum_bot
+```
+
+### 5. Install Dependencies
+```bash
+pip3 install -r requirements.txt --break-system-packages
+```
+
+### 6. Edit Config
+```bash
+nano config.py
+# Fill in KITE_API_KEY, KITE_API_SECRET, TOTAL_CAPITAL
+# Ctrl+X → Y → Enter to save
+```
+
+### 7. Test With Dry Run
+```bash
+python3 login.py                     # log in once to save token
+python3 bot.py --dry-run --now       # verify everything works
+```
+
+### 8. Run as a Persistent Service (auto-restarts on crash/reboot)
+```bash
+sudo nano /etc/systemd/system/momentum_bot.service
+```
+Paste:
+```ini
+[Unit]
+Description=Zerodha Momentum Bot
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/zerodha_momentum_bot
+ExecStart=/usr/bin/python3 bot.py
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
+```
+Enable and start:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable momentum_bot
+sudo systemctl start momentum_bot
+sudo systemctl status momentum_bot   # should show "active (running)"
+```
+
+### 9. Daily Login via Cron (8 AM IST)
+```bash
+crontab -e
+```
+Add:
+```
+0 8 * * 1-5 cd /home/ubuntu/zerodha_momentum_bot && python3 login.py >> logs/login.log 2>&1
+```
+
+### Useful Commands
+```bash
+# Check bot status
+sudo systemctl status momentum_bot
+
+# Watch live logs
+tail -f ~/zerodha_momentum_bot/logs/bot.log
+
+# Restart after config changes
+sudo systemctl restart momentum_bot
+
+# View order history
+cat ~/zerodha_momentum_bot/logs/orders.csv
+```
+
+### AWS Cost
+| Resource | Cost |
+|---|---|
+| t2.micro EC2 | Free for 12 months (750 hrs/month free tier) |
+| After free tier | ~$8–10/month |
+
+---
+
 
 ## Logs
 
