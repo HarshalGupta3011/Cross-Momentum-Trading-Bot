@@ -30,17 +30,12 @@ from kiteconnect import KiteConnect
 # ═══════════════════════════════════════════════════════════════
 # CONFIGURATION — Edit this section before running
 # ═══════════════════════════════════════════════════════════════
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "zerodha_momentum_bot"))
-try:
-    import config as _cfg
-    KITE_API_KEY    = _cfg.KITE_API_KEY
-    KITE_API_SECRET = _cfg.KITE_API_SECRET
-    INITIAL_CAPITAL = _cfg.TOTAL_CAPITAL
-    logger.info("✓ Loaded credentials from config.py")
-except ImportError:
-    pass  # falls back to values hardcoded below
-KITE_API_KEY    = KITE_API_KEY    if 'KITE_API_KEY'    in dir() else "your_api_key_here"
-KITE_API_SECRET = KITE_API_SECRET if 'KITE_API_SECRET' in dir() else "your_api_secret_here"
+
+# Leave blank to auto-load from zerodha_momentum_bot/config.py
+KITE_API_KEY    = ""
+KITE_API_SECRET = ""
+INITIAL_CAPITAL = 0   # set to 0 to auto-load from config.py
+
 START_DATE      = "2021-01-01"
 END_DATE        = "today"       # auto uses today's date
 
@@ -84,6 +79,25 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# ── Auto-load credentials from bot config.py if not set above ──
+if not KITE_API_KEY:
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "zerodha_momentum_bot"))
+        import config as _cfg
+        KITE_API_KEY    = _cfg.KITE_API_KEY
+        KITE_API_SECRET = _cfg.KITE_API_SECRET
+        INITIAL_CAPITAL = _cfg.TOTAL_CAPITAL
+        logger.info("✓ Loaded credentials from zerodha_momentum_bot/config.py")
+    except Exception as e:
+        logger.error(f"Could not load config.py: {e}")
+        logger.error("Fill in KITE_API_KEY and KITE_API_SECRET at the top of this file.")
+        sys.exit(1)
+
+if INITIAL_CAPITAL == 0:
+    INITIAL_CAPITAL = 1_000_000   # fallback default
+
+ACCESS_TOKEN_FILE = "backtest_token.txt"
 
 # ═══════════════════════════════════════════════════════════════
 # STEP 1 — LOGIN
@@ -162,29 +176,23 @@ def get_token(kite: KiteConnect, symbol: str) -> int | None:
 
 def fetch_ohlcv(kite: KiteConnect, token: int, symbol: str,
                 from_date: str, to_date: str) -> pd.DataFrame | None:
-    """Fetch daily OHLCV for one symbol. Uses CSV cache.
-    Cache key uses only from_date so the same file is reused across runs.
-    File is refreshed once per day when market closes.
-    """
-    # Cache key: symbol + start date only (not end date)
-    cache_file = os.path.join(CACHE_DIR, f"{symbol}_{from_date}.csv")
+    """Fetch daily OHLCV. Cache = one file per symbol, reused every run."""
 
-    if os.path.exists(cache_file):
-        # Delete if empty or corrupt
-        if os.path.getsize(cache_file) < 50:
-            os.remove(cache_file)
-        else:
-            # Check if cache is fresh (written today)
-            file_date = date.fromtimestamp(os.path.getmtime(cache_file))
-            if file_date >= date.today():
-                try:
-                    return pd.read_csv(cache_file, parse_dates=["date"], index_col="date")
-                except Exception:
-                    os.remove(cache_file)
-            else:
-                # Stale — re-download to pick up new candles since last run
-                os.remove(cache_file)
+    # & in symbol names (e.g. M&M) breaks Windows filenames
+    safe_sym   = symbol.replace("&", "-")
+    cache_file = os.path.join(CACHE_DIR, f"{safe_sym}_{from_date}.csv")
 
+    # ── Use cache if file exists, is non-empty, and readable ──
+    if os.path.exists(cache_file) and os.path.getsize(cache_file) > 50:
+        try:
+            df = pd.read_csv(cache_file, parse_dates=["date"], index_col="date")
+            if len(df) > 0:
+                return df          # ← cache hit, skip API call entirely
+        except Exception:
+            pass                   # corrupt file, fall through to re-download
+        os.remove(cache_file)      # delete corrupt file
+
+    # ── Download from Kite ──
     try:
         candles = kite.historical_data(
             instrument_token = token,
@@ -199,14 +207,13 @@ def fetch_ohlcv(kite: KiteConnect, token: int, symbol: str,
 
         df = pd.DataFrame(candles)
         df["date"] = pd.to_datetime(df["date"]).dt.normalize()
-        df = df.set_index("date")[["open","high","low","close","volume"]]
+        df = df.set_index("date")[["open", "high", "low", "close", "volume"]]
         df.to_csv(cache_file)
         return df
 
     except Exception as e:
         logger.warning(f"  Failed {symbol}: {e}")
         return None
-
 
 
 def get_nifty500_universe() -> list:
@@ -295,7 +302,7 @@ def download_prices(kite: KiteConnect, universe: list, from_date: str, to_date: 
 
     prices = pd.DataFrame(closes).sort_index()
     prices = prices.dropna(axis=1, thresh=int(len(prices) * 0.8))
-    prices = prices.ffill()
+    prices = prices.ffill(limit=5)
     logger.info(f"✓ {prices.shape[1]} stocks × {len(prices)} days")
     return prices
 
@@ -405,7 +412,7 @@ def calc_stats(result: dict) -> dict:
     gp           = monthly_ret[monthly_ret > 0].sum()
     gl           = abs(monthly_ret[monthly_ret < 0].sum())
     pf           = gp / gl if gl > 0 else np.inf
-    avg_hold     = (result["weights"] > 0).sum(axis=1).mean()
+    avg_hold     = (result["weights"] > 0).sum(axis=1).mean() if not result["weights"].empty else 0
 
     return {
         "Label"          : label,
@@ -536,7 +543,7 @@ def main(clear_cache: bool = False, only_filter: str = None):
     logger.info("  KITE CROSS-SECTIONAL MOMENTUM BACKTEST")
     logger.info("=" * 65)
 
-    end_date = date.today().strftime("%Y-%m-%d") if END_DATE == "today" else END_DATE
+    end_date = date.today().strftime("%Y-%m-%d") if END_DATE.lower() == "today" else END_DATE
 
     if clear_cache:
         import shutil
