@@ -155,7 +155,7 @@ def run_rebalance(dry_run: bool = False, force: bool = False):
 
         # ── Step 4: Fetch prices & compute signals ──
         logger.info("Fetching historical prices for momentum calculation...")
-        prices = fetch_prices(config.UNIVERSE, days=config.MOMENTUM_WINDOW + 60)
+        prices = fetch_prices(config.UNIVERSE, days=420)
 
         logger.info("Computing momentum scores and target portfolio...")
         target_portfolio, ranks = get_target_portfolio(
