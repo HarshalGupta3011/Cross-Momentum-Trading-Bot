@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # FETCH HISTORICAL PRICES
 # ─────────────────────────────────────────────
 
-def fetch_prices(symbols, days=400):
+def fetch_prices(symbols, days=420):
     """
     Fetch historical daily close prices for universe via yfinance.
     symbols: list of NSE symbols (without .NS)
@@ -55,7 +55,7 @@ def fetch_prices(symbols, days=400):
     return raw
 
 
-def fetch_nifty50(days=400):
+def fetch_nifty50(days=420):
     """Fetch Nifty 50 index historical prices."""
     end   = datetime.today()
     start = end - timedelta(days=days)
