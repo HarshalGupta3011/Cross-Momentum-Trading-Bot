@@ -133,7 +133,7 @@ def run_rebalance(dry_run: bool = False, force: bool = False):
 
         # ── Step 3: Regime check ──
         logger.info("Checking regime filter (EMA 200)...")
-        nifty50_prices = fetch_nifty50(days=400)
+        nifty50_prices = fetch_nifty50(kite,days=1500)
         regime_bullish = is_market_bullish(nifty50_prices, ema_window=config.EMA_WINDOW)
 
         current_holdings = get_current_holdings(kite)
