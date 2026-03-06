@@ -271,6 +271,7 @@ All activity is logged to the `logs/` directory:
 
 ---
 ## Backtest 
+Run the backtest.py file and edit the start and end date as your liking(make sure its not more than 4000 days limited by kiteconnect)
 <img width="1972" height="1287" alt="equity_drawdown" src="https://github.com/user-attachments/assets/6ed7298b-c831-457d-bfb7-5c11072173b6" />
 
 <img width="1657" height="657" alt="stats_table" src="https://github.com/user-attachments/assets/fc204d87-2675-454b-84d2-7725271002ba" />
@@ -279,4 +280,4 @@ All activity is logged to the `logs/` directory:
 
 ## Disclaimer
 
-This bot is for educational purposes. Live trading involves real financial risk. Always test thoroughly with `--dry-run` before going live. Past backtest performance does not guarantee future results.
+This bot is for educational purposes. Live trading involves real financial risk. Always test thoroughly wth `--dry-run` before going live. Past backtest performance does not guarantee future results.
