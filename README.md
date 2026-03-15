@@ -1,6 +1,7 @@
 # Zerodha Cross-Sectional Momentum Bot
 
 Live trading bot for the Nifty 500 Cross-Sectional Momentum Strategy with EMA 200 regime filter, built on Zerodha Kite Connect.
+<img width="1920" height="1080" alt="Screenshot (669)" src="https://github.com/user-attachments/assets/4b3396c5-10c8-41b4-849f-6acaaa1a1dfb" />
 
 ---
 
