@@ -260,6 +260,9 @@ cat ~/zerodha_momentum_bot/logs/orders.csv
 ---
 ## Dashboard
 GUI for easy control
+<img width="1920" height="1080" alt="Screenshot (669)" src="https://github.com/user-attachments/assets/4b3396c5-10c8-41b4-849f-6acaaa1a1dfb" />
+<img width="1920" height="1080" alt="Screenshot (673)" src="https://github.com/user-attachments/assets/ae62eb2c-7c81-468a-b935-22b45492bde8" />
+
 
 
 ## Logs
