@@ -115,7 +115,7 @@ Create a task that runs `python bot.py --now` on a monthly schedule.
 Zerodha access tokens expire daily at midnight. For fully automated running, you need a way to refresh the token daily. Options:
 
 1. **Manual**: Run `python login.py` each morning before market open
-2. **TOTP automation**: Use `pyotp` with your Zerodha TOTP secret to automate the login flow (requires some extra setup — see Kite Connect docs)
+2. **TOTP automation**: type your zerodha user id, password and totp secret in config.py
 
 ---
 
