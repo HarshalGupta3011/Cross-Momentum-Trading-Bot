@@ -25,7 +25,8 @@ from PyQt5.QtWidgets import (
     QSizePolicy, QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox,
     QCheckBox, QGroupBox, QScrollArea, QProgressBar
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QThread
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QThread, QDate
+from PyQt5.QtGui import QFont, QColor, QPalette, QPainter, QPen, QBrush
 from PyQt5.QtGui import QFont, QColor, QPalette
 import pyqtgraph as pg
 
@@ -384,9 +385,12 @@ class RegimeWidget(QFrame):
 class Dashboard(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.kite        = None
-        self.bot_thread  = None
-        self.bot_running = False
+        self.kite           = None
+        self.bot_thread    = None
+        self.bot_running   = False
+        self.peak_value    = 0.0
+        self.paper_mode    = False
+        self._prices_cache = None
 
         self.setWindowTitle("Zerodha Momentum Bot — Dashboard")
         self.setMinimumSize(1280, 800)
@@ -397,6 +401,11 @@ class Dashboard(QMainWindow):
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self._refresh_data)
         self.refresh_timer.start(60_000)
+
+        # Clock + countdown timer (every second)
+        self.clock_timer = QTimer()
+        self.clock_timer.timeout.connect(self._tick_clock)
+        self.clock_timer.start(1_000)
 
         # Try to connect on startup
         QTimer.singleShot(500, self._connect)
@@ -429,6 +438,7 @@ class Dashboard(QMainWindow):
         tabs.addTab(self._build_chart_tab(),      "Equity Curve")
         tabs.addTab(self._build_tradelog_tab(),   "Trade Log")
         tabs.addTab(self._build_log_tab(),        "Bot Log")
+        tabs.addTab(self._build_top10_tab(),      "Top 10")
         tabs.addTab(self._build_config_tab(),     "Config")
         tabs.addTab(self._build_backtest_tab(),   "Backtest")
         root.addWidget(tabs)
@@ -498,14 +508,15 @@ class Dashboard(QMainWindow):
         layout = QHBoxLayout()
         layout.setSpacing(8)
 
-        self.card_value    = StatCard("Portfolio Value",    "—",  C_ACCENT)
-        self.card_pnl      = StatCard("Day P&L",            "—",  C_SUBTEXT)
-        self.card_holdings = StatCard("Holdings",           "—",  C_YELLOW)
-        self.card_cash     = StatCard("Cash",               "—",  C_SUBTEXT)
-        self.regime_widget = RegimeWidget()
+        self.card_value     = StatCard("Portfolio Value",  "—",    C_ACCENT)
+        self.card_pnl       = StatCard("Day P&L",          "—",    C_SUBTEXT)
+        self.card_holdings  = StatCard("Holdings",         "—",    C_YELLOW)
+        self.card_drawdown  = StatCard("Drawdown",         "0.00%",C_GREEN)
+        self.card_countdown = StatCard("Next Rebalance",   "—",    C_PURPLE)
+        self.regime_widget  = RegimeWidget()
 
-        for card in [self.card_value, self.card_pnl,
-                     self.card_holdings, self.card_cash]:
+        for card in [self.card_value, self.card_pnl, self.card_holdings,
+                     self.card_drawdown, self.card_countdown]:
             layout.addWidget(card, stretch=1)
         layout.addWidget(self.regime_widget, stretch=0)
         layout.addStretch()
@@ -971,6 +982,268 @@ class Dashboard(QMainWindow):
         self.bt_status_lbl.setText(f"Error: {error}")
         self._log(f"Backtest error: {error}")
 
+
+    # ─────────────────────────────────────────────
+    # CLOCK & COUNTDOWN
+    # ─────────────────────────────────────────────
+
+    def _tick_clock(self):
+        """Update countdown to next rebalance every second."""
+        today     = date.today()
+        # Find last trading day of current month
+        if today.month == 12:
+            first_next = date(today.year + 1, 1, 1)
+        else:
+            first_next = date(today.year, today.month + 1, 1)
+        last_day = first_next - pd.Timedelta(days=1)
+        while last_day.weekday() >= 5:
+            last_day -= pd.Timedelta(days=1)
+
+        delta = last_day - today
+        if delta.days < 0:
+            self.card_countdown.set_value("TODAY", C_RED)
+        elif delta.days == 0:
+            self.card_countdown.set_value("TODAY", C_RED)
+        elif delta.days == 1:
+            self.card_countdown.set_value("TOMORROW", C_YELLOW)
+        else:
+            self.card_countdown.set_value(f"{delta.days}d", C_PURPLE)
+
+    # ─────────────────────────────────────────────
+    # TOP 10 MOMENTUM TAB
+    # ─────────────────────────────────────────────
+
+    def _build_top10_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 8, 0, 0)
+        layout.setSpacing(8)
+
+        # Info label
+        info = QLabel("TOP 10 STOCKS BY CURRENT MOMENTUM RANK  |  Updated on demand")
+        info.setStyleSheet(
+            f"color: {C_SUBTEXT}; font-size: 10px; letter-spacing: 1px;"
+            f"padding: 6px 12px; border-bottom: 1px solid {C_ACCENT}33;")
+        layout.addWidget(info)
+
+        self.top10_table = QTableWidget()
+        self.top10_table.setColumnCount(4)
+        self.top10_table.setHorizontalHeaderLabels(
+            ["RANK", "SYMBOL", "MOMENTUM %", "STATUS"])
+        self.top10_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.top10_table.setAlternatingRowColors(True)
+        self.top10_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.top10_table.verticalHeader().setVisible(False)
+        self.top10_table.setFixedHeight(380)
+
+        self.top10_status = QLabel("Click 'Refresh Top 10' to load")
+        self.top10_status.setStyleSheet(
+            f"color: {C_SUBTEXT}; font-size: 11px; padding: 8px;"
+            f"letter-spacing: 1px;")
+        self.top10_status.setAlignment(Qt.AlignCenter)
+
+        layout.addWidget(self.top10_table)
+        layout.addWidget(self.top10_status)
+        layout.addStretch()
+        return widget
+
+    def _refresh_top10(self):
+        if not self.kite:
+            self._log("Not connected")
+            return
+        self.top10_status.setText("Fetching momentum scores from Kite...")
+        self._log("Fetching top 10 momentum stocks...")
+
+        kite = self.kite
+        def do_top10():
+            from signals import fetch_prices, compute_momentum_scores
+            universe = list(config.UNIVERSE)
+            prices   = fetch_prices(kite, universe, days=420)
+            scores   = compute_momentum_scores(prices)
+            ranked   = scores.sort_values(ascending=False)
+            # Current holdings for status
+            try:
+                from orders import get_current_holdings
+                holdings = set(get_current_holdings(kite).keys())
+            except Exception:
+                holdings = set()
+            return ranked, holdings
+
+        self.worker_top10 = Worker(do_top10)
+        self.worker_top10.signals.finished.connect(self._update_top10_ui)
+        self.worker_top10.signals.error.connect(
+            lambda e: (self.top10_status.setText(f"Error: {e}"),
+                       self._log(f"Top 10 failed: {e}")))
+        self.worker_top10.start()
+
+    def _update_top10_ui(self, data):
+        ranked, holdings = data
+        top10 = ranked.head(10)
+
+        self.top10_table.setRowCount(len(top10))
+        for i, (sym, score) in enumerate(top10.items()):
+            in_portfolio = sym in holdings
+            status = "HOLDING" if in_portfolio else "WATCHLIST"
+            s_color = C_GREEN if in_portfolio else C_SUBTEXT
+
+            items = [
+                (f"#{i+1}", C_ACCENT),
+                (sym, C_TEXT),
+                (f"{score*100:.1f}%", C_GREEN if score > 0 else C_RED),
+                (status, s_color),
+            ]
+            for col, (text, color) in enumerate(items):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignCenter)
+                item.setForeground(QColor(color))
+                self.top10_table.setItem(i, col, item)
+
+        self.top10_status.setText(
+            f"Updated: {datetime.now().strftime('%H:%M:%S')}  |  "
+            f"Showing top 10 of {len(ranked)} ranked stocks")
+        self._log(f"Top 10 updated — #{1}: {list(top10.index)[0]}")
+
+    # ─────────────────────────────────────────────
+    # ORDER PREVIEW
+    # ─────────────────────────────────────────────
+
+    def _preview_orders(self):
+        if not self.kite:
+            QMessageBox.warning(self, "Not Connected",
+                                "Please connect to Kite first.")
+            return
+        self._log("Computing order preview...")
+
+        kite = self.kite
+        def do_preview():
+            from signals import (fetch_prices, fetch_nifty50,
+                                  is_market_bullish, get_target_portfolio,
+                                  compute_trade_list)
+            from orders import get_current_holdings, get_current_prices
+
+            nifty        = fetch_nifty50(kite, days=900)
+            bullish      = is_market_bullish(nifty, config.EMA_WINDOW)
+            holdings     = get_current_holdings(kite)
+
+            if not bullish:
+                # All sells
+                buys  = []
+                sells = list(holdings.items())
+                return buys, sells, bullish, config.TOTAL_CAPITAL
+
+            prices       = fetch_prices(kite, list(config.UNIVERSE), days=420)
+            target, _    = get_target_portfolio(
+                prices, list(holdings.keys()),
+                top_n=config.TOP_N, exit_rank=config.EXIT_RANK)
+            all_sym      = list(set(list(holdings.keys()) + target))
+            cur_prices   = get_current_prices(kite, all_sym)
+            buys, sells  = compute_trade_list(
+                holdings, target, cur_prices, config.TOTAL_CAPITAL)
+            return buys, sells, bullish, config.TOTAL_CAPITAL
+
+        self.worker_preview = Worker(do_preview)
+        self.worker_preview.signals.finished.connect(self._show_order_preview)
+        self.worker_preview.signals.error.connect(
+            lambda e: self._log(f"Preview failed: {e}"))
+        self.worker_preview.start()
+
+    def _show_order_preview(self, data):
+        buys, sells, bullish, capital = data
+
+        dialog = QWidget(self, Qt.Window)
+        dialog.setWindowTitle("ORDER PREVIEW")
+        dialog.setMinimumSize(700, 500)
+        dialog.setStyleSheet(STYLE_SHEET + f"""
+            QWidget {{ background: {C_BG}; }}
+        """)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        # Header
+        regime_txt = "BULLISH — Normal rebalance" if bullish else "BEARISH — SELL ALL"
+        regime_col = C_GREEN if bullish else C_RED
+        hdr = QLabel(f"ORDER PREVIEW  //  REGIME: {regime_txt}")
+        hdr.setStyleSheet(
+            f"color: {regime_col}; font-size: 13px; font-weight: bold;"
+            f"letter-spacing: 2px; padding-bottom: 8px;"
+            f"border-bottom: 1px solid {C_ACCENT}44;")
+        layout.addWidget(hdr)
+
+        # Summary
+        n_stocks    = len(buys) + (len(sells) if not sells else 0)
+        total_buy   = sum(qty * 0 for _, qty in buys)   # price not available here
+        summary = QLabel(
+            f"  BUYS: {len(buys)}   |   SELLS: {len(sells)}   |   "
+            f"EQUAL WEIGHT: Rs {capital / max(len(buys) + len([s for s in sells if s not in [b[0] for b in buys]]), 1):,.0f} per stock")
+        summary.setStyleSheet(f"color: {C_SUBTEXT}; font-size: 11px; letter-spacing: 1px;")
+        layout.addWidget(summary)
+
+        # Table
+        table = QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["ACTION", "SYMBOL", "QUANTITY"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+
+        rows = [(C_GREEN, "BUY",  sym, qty) for sym, qty in buys] +                [(C_RED,   "SELL", sym, qty) for sym, qty in sells]
+        table.setRowCount(len(rows))
+
+        for r, (color, action, sym, qty) in enumerate(rows):
+            for c, text in enumerate([action, sym, str(qty)]):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignCenter)
+                item.setForeground(QColor(color))
+                table.setItem(r, c, item)
+
+        layout.addWidget(table)
+
+        # Confirm / Cancel
+        btn_row = QHBoxLayout()
+        btn_cancel = QPushButton("CANCEL")
+        btn_execute = QPushButton("EXECUTE LIVE")
+        btn_execute.setStyleSheet(
+            f"background: #1a0508; color: {C_RED};"
+            f"border: 1px solid {C_RED}; padding: 8px 20px;")
+        btn_cancel.clicked.connect(dialog.close)
+        btn_execute.clicked.connect(lambda: (dialog.close(), self._run_rebalance()))
+        btn_row.addStretch()
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(btn_execute)
+        layout.addLayout(btn_row)
+
+        dialog.show()
+        self._log(f"Order preview: {len(buys)} buys, {len(sells)} sells")
+
+    # ─────────────────────────────────────────────
+    # PAPER MODE
+    # ─────────────────────────────────────────────
+
+    def _toggle_paper_mode(self):
+        self.paper_mode = not self.paper_mode
+        if self.paper_mode:
+            self.btn_paper.setText("Paper Mode: ON")
+            self.btn_paper.setStyleSheet(
+                f"background: #0d2818; color: {C_GREEN};"
+                f"border: 1px solid {C_GREEN}; padding: 7px 14px;")
+            self.btn_rebalance.setText("Rebalance (PAPER)")
+            self.btn_rebalance.setStyleSheet(
+                f"background: #0d2818; color: {C_GREEN};"
+                f"border: 1px solid {C_GREEN}; border-radius: 6px; padding: 8px 18px;")
+            self._log("Paper mode ON — rebalances will be simulated only")
+        else:
+            self.btn_paper.setText("Paper Mode: OFF")
+            self.btn_paper.setStyleSheet(
+                f"background: #1a1200; color: {C_YELLOW};"
+                f"border: 1px solid {C_YELLOW}; padding: 7px 14px;")
+            self.btn_rebalance.setText("Rebalance (LIVE)")
+            self.btn_rebalance.setStyleSheet(
+                f"background: #3d1515; color: {C_RED};"
+                f"border: 1px solid {C_RED}; border-radius: 6px; padding: 8px 18px;")
+            self._log("Paper mode OFF — rebalances will place REAL orders")
+
     def _build_controls(self):
         layout = QHBoxLayout()
         layout.setSpacing(8)
@@ -978,9 +1251,12 @@ class Dashboard(QMainWindow):
         self.btn_connect   = QPushButton("Connect to Kite")
         self.btn_regime    = QPushButton("Check Regime")
         self.btn_refresh   = QPushButton("Refresh Portfolio")
+        self.btn_top10     = QPushButton("Refresh Top 10")
         self.btn_dry_run   = QPushButton("Run Dry Run")
-        self.btn_rebalance = QPushButton("Run Rebalance (LIVE)")
-        self.btn_bot_start = QPushButton("Start Bot Scheduler")
+        self.btn_preview   = QPushButton("Preview Orders")
+        self.btn_rebalance = QPushButton("Rebalance (LIVE)")
+        self.btn_paper     = QPushButton("Paper Mode: OFF")
+        self.btn_bot_start = QPushButton("Start Scheduler")
         self.btn_bot_stop  = QPushButton("Stop Bot")
 
         self.btn_rebalance.setStyleSheet(
@@ -994,13 +1270,24 @@ class Dashboard(QMainWindow):
         self.btn_connect.clicked.connect(self._connect)
         self.btn_regime.clicked.connect(self._check_regime)
         self.btn_refresh.clicked.connect(self._refresh_data)
+        self.btn_top10.clicked.connect(self._refresh_top10)
         self.btn_dry_run.clicked.connect(self._run_dry_run)
+        self.btn_preview.clicked.connect(self._preview_orders)
         self.btn_rebalance.clicked.connect(self._run_rebalance)
+        self.btn_paper.clicked.connect(self._toggle_paper_mode)
         self.btn_bot_start.clicked.connect(self._start_bot)
         self.btn_bot_stop.clicked.connect(self._stop_bot)
 
+        self.btn_paper.setStyleSheet(
+            f"background: #1a1200; color: {C_YELLOW};"
+            f"border: 1px solid {C_YELLOW}; padding: 7px 14px;")
+        self.btn_preview.setStyleSheet(
+            f"background: #0d1a2d; color: {C_ACCENT};"
+            f"border: 1px solid {C_ACCENT}; padding: 7px 14px;")
+
         for btn in [self.btn_connect, self.btn_regime, self.btn_refresh,
-                    self.btn_dry_run, self.btn_rebalance,
+                    self.btn_top10, self.btn_dry_run, self.btn_preview,
+                    self.btn_rebalance, self.btn_paper,
                     self.btn_bot_start, self.btn_bot_stop]:
             layout.addWidget(btn)
 
@@ -1103,6 +1390,15 @@ class Dashboard(QMainWindow):
         # Stat cards
         self.card_value.set_value(f"Rs {port_value/1e5:.2f}L", C_ACCENT)
         self.card_holdings.set_value(str(len(holdings)), C_YELLOW)
+
+        # Drawdown tracking
+        if port_value > 0:
+            if port_value > self.peak_value:
+                self.peak_value = port_value
+            if self.peak_value > 0:
+                dd = (self.peak_value - port_value) / self.peak_value * 100
+                dd_color = C_GREEN if dd < 5 else (C_YELLOW if dd < 10 else C_RED)
+                self.card_drawdown.set_value(f"-{dd:.2f}%", dd_color)
 
         # Day P&L from positions
         day_pnl = sum(
@@ -1272,6 +1568,10 @@ class Dashboard(QMainWindow):
         if not self.kite:
             QMessageBox.warning(self, "Not Connected",
                                 "Please connect to Kite first.")
+            return
+        if self.paper_mode:
+            self._log("Starting PAPER rebalance (no real orders)...")
+            self._run_bot_action(dry_run=True, force=True)
             return
         confirm = QMessageBox.question(
             self, "Confirm Live Rebalance",
