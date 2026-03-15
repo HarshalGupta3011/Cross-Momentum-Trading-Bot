@@ -1,6 +1,7 @@
 # Zerodha Cross-Sectional Momentum Bot
 
 Live trading bot for the Nifty 500 Cross-Sectional Momentum Strategy with EMA 200 regime filter, built on Zerodha Kite Connect.
+
 <img width="1920" height="1080" alt="Screenshot (669)" src="https://github.com/user-attachments/assets/4b3396c5-10c8-41b4-849f-6acaaa1a1dfb" />
 
 ---
@@ -48,7 +49,7 @@ pip install -r requirements.txt
 
 ### 2. Get Zerodha Kite API access
 1. Go to [https://developers.kite.trade/](https://developers.kite.trade/)
-2. Create an app → get your **API Key** and **API Secret**
+2. Create a connect app(paid) → get your **API Key** and **API Secret**
 3. Set redirect URL to `http://127.0.0.1` in your app settings
 
 ### 3. Edit config.py
@@ -131,7 +132,7 @@ The bot has built-in safeguards:
 | Market hours guard | 9:15–15:30 | Won't place orders outside NSE hours |
 
 ---
-## AWS EC2 Deployment
+## AWS EC2 Deployment (for full automation)
 
 Running the bot on AWS EC2 keeps it running 24/7 independently of your local machine — closing your laptop has no effect on the bot.
 
