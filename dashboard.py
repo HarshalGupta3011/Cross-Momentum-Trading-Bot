@@ -898,8 +898,8 @@ class Dashboard(QMainWindow):
             # Import backtest module dynamically
             import importlib.util
             bt_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "..", "kite_backtest.py")
-            spec = importlib.util.spec_from_file_location("kite_backtest", bt_path)
+                os.path.dirname(os.path.abspath(__file__)), "", "backtest.py")
+            spec = importlib.util.spec_from_file_location("backtest", bt_path)
             bt   = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(bt)
 
