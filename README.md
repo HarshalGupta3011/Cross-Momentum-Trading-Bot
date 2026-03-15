@@ -258,6 +258,10 @@ cat ~/zerodha_momentum_bot/logs/orders.csv
 | After free tier | ~$8–10/month |
 
 ---
+## Dashboard
+
+
+
 
 
 ## Logs
