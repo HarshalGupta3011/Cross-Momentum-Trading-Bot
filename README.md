@@ -259,8 +259,6 @@ cat ~/zerodha_momentum_bot/logs/orders.csv
 
 ---
 ## Dashboard
-[https://github.com/HarshalGupta3011/image/blob/main/Screenshot%20(667).png]
-
 
 
 
@@ -279,7 +277,6 @@ Run the backtest.py file and edit the start and end date as your liking(make sur
 <img width="1972" height="1287" alt="equity_drawdown" src="https://github.com/user-attachments/assets/6ed7298b-c831-457d-bfb7-5c11072173b6" />
 
 <img width="1657" height="657" alt="stats_table" src="https://github.com/user-attachments/assets/fc204d87-2675-454b-84d2-7725271002ba" />
-
 
 
 ## Disclaimer
