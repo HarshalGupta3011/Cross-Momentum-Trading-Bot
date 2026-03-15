@@ -259,7 +259,7 @@ cat ~/zerodha_momentum_bot/logs/orders.csv
 
 ---
 ## Dashboard
-
+GUI for easy control
 
 
 ## Logs
