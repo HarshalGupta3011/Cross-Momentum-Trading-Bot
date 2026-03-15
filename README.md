@@ -259,7 +259,7 @@ cat ~/zerodha_momentum_bot/logs/orders.csv
 
 ---
 ## Dashboard
-
+[https://github.com/HarshalGupta3011/image/blob/main/Screenshot%20(667).png]
 
 
 
