@@ -3,93 +3,126 @@ config.py — All settings for the Momentum Bot
 Edit this file before running the bot.
 """
 
+import os
+import requests
+import pandas as pd
+from datetime import date
+
 # ─────────────────────────────────────────────
 # ZERODHA KITE API CREDENTIALS
-# Get these from: https://developers.kite.trade/
 # ─────────────────────────────────────────────
-KITE_API_KEY    = "your_api_key_here"
-KITE_API_SECRET = "your_api_secret_here"
-
-# ─────────────────────────────────────────────
-# ZERODHA LOGIN CREDENTIALS (for auto-login)
-# ─────────────────────────────────────────────
-ZERODHA_USER_ID  = "your_zerodha_user_id"   # e.g. "AB1234"
-ZERODHA_PASSWORD = "your_zerodha_password"
-
-# TOTP Secret — get this from Zerodha:
-#   1. Log in to zerodha.com → My Profile → Security → 2FA
-#   2. Click "Show QR" → then "Can't scan? Use text key instead"
-#   3. Copy that text key and paste it here
-ZERODHA_TOTP_SECRET = "your_totp_secret_key_here"   # e.g. "JBSWY3DPEHPK3PXP"
-
-# After first login, the access token is saved to this file automatically
-ACCESS_TOKEN_FILE = "access_token.txt"
+KITE_API_KEY            = ""
+KITE_API_SECRET         = ""
+ACCESS_TOKEN_FILE       = "access_token.txt"
 
 # ─────────────────────────────────────────────
 # CAPITAL & POSITION SIZING
 # ─────────────────────────────────────────────
-TOTAL_CAPITAL   = 1_000_000   # Rs 10 Lakhs — CHANGE THIS
-TOP_N           = 30          # Max stocks to hold
-EXIT_RANK       = 34          # Exit if momentum rank drops below this
-MOMENTUM_WINDOW = 252         # 1-year momentum lookback (trading days)
-EMA_WINDOW      = 200         # Regime filter: EMA period on Nifty 50
+TOTAL_CAPITAL           = 500000
+TOP_N                   = 30
+EXIT_RANK               = 34
+MOMENTUM_WINDOW         = 252
+EMA_WINDOW              = 200
 
 # ─────────────────────────────────────────────
 # RISK MANAGEMENT
 # ─────────────────────────────────────────────
-MAX_DRAWDOWN_PCT     = 20.0   # Kill switch: halt if portfolio drops >20% from peak
-MAX_POSITION_PCT     = 0.05   # Max 5% in any single stock (safety cap)
-MIN_STOCK_PRICE      = 50     # Skip stocks below this price (illiquid)
-MIN_VOLUME           = 50000  # Skip stocks with avg volume below this
+MAX_DRAWDOWN_PCT        = 20.0
+MAX_POSITION_PCT        = 0.05
+MIN_STOCK_PRICE         = 50
+MIN_VOLUME              = 50000
 
 # ─────────────────────────────────────────────
 # TELEGRAM ALERTS (optional)
-# Leave blank to disable
 # ─────────────────────────────────────────────
-TELEGRAM_BOT_TOKEN = ""       # e.g. "123456:ABCdef..."
-TELEGRAM_CHAT_ID   = ""       # e.g. "-1001234567890"
+TELEGRAM_BOT_TOKEN      = ""
+TELEGRAM_CHAT_ID        = ""
 
 # ─────────────────────────────────────────────
-# NIFTY 500 UNIVERSE (NSE symbols, no .NS suffix for Kite)
+# NIFTY 500 UNIVERSE — fetched from NSE at startup
 # ─────────────────────────────────────────────
-UNIVERSE = [
-    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
-    "BHARTIARTL","SBIN","WIPRO","HCLTECH","LT",
-    "AXISBANK","KOTAKBANK","ASIANPAINT","MARUTI","BAJFINANCE",
-    "TITAN","SUNPHARMA","NESTLEIND","ULTRACEMCO","POWERGRID",
-    "NTPC","COALINDIA","ONGC","TATAMOTORS","ADANIENT",
-    "BAJAJFINSV","DIVISLAB","DRREDDY","CIPLA","EICHERMOT",
-    "HEROMOTOCO","HINDALCO","JSWSTEEL","M&M","TECHM",
-    "BRITANNIA","GRASIM","INDUSINDBK","ITC","PIDILITIND",
-    "HAVELLS","MCDOWELL-N","DABUR","BERGEPAINT","COLPAL",
-    "TATACONSUM","AMBUJACEM","GODREJCP","MARICO","VOLTAS",
-    "APOLLOHOSP","FORTIS","MAXHEALTH","LALPATHLAB","METROPOLIS",
-    "ZOMATO","NYKAA","DELHIVERY","IRCTC","RVNL",
-    "IRFC","PFC","RECLTD","HDFCLIFE","SBILIFE",
-    "ICICIGI","BAJAJ-AUTO","ESCORTS","APLAPOLLO","ASTRAL",
-    "POLYCAB","KEI","CUMMINSIND","SIEMENS","ABB",
-    "BHEL","HAL","BEL","MPHASIS","LTIM",
-    "PERSISTENT","COFORGE","KPITTECH","TRENT","DMART",
-    "PAGEIND","CONCOR","ADANIPORTS","INDIGO","BANKBARODA",
-    "PNB","FEDERALBNK","IDFCFIRSTB","BANDHANBNK","MUTHOOTFIN",
-    "CHOLAFIN","MANAPPURAM","TATASTEEL","SAIL","NMDC",
-]
 
-NIFTY50_SYMBOL  = "NIFTY 50"   # As used in Kite indices
-NIFTY50_YFTICKER = "^NSEI"     # For historical data via yfinance
+def _fetch_nifty500() -> list:
+    """
+    Fetch official Nifty 500 constituents from NSE.
+    Caches to logs/nifty500_cache.csv — refreshes once per day.
+    Falls back to cache if NSE is unreachable.
+    """
+    cache_dir  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    cache_file = os.path.join(cache_dir, "nifty500_cache.csv")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    # Use cache if written today
+    if os.path.exists(cache_file):
+        file_date = date.fromtimestamp(os.path.getmtime(cache_file))
+        if file_date >= date.today():
+            try:
+                df = pd.read_csv(cache_file)
+                symbols = df["Symbol"].str.strip().tolist()
+                if len(symbols) > 100:
+                    return symbols
+            except Exception:
+                pass
+
+    # Download from NSE
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Referer"   : "https://www.nseindia.com/",
+        "Accept"    : "text/html,application/xhtml+xml,*/*",
+    }
+    urls = [
+        "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv",
+        "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv",
+    ]
+    for url in urls:
+        try:
+            resp    = requests.get(url, headers=headers, timeout=15)
+            resp.raise_for_status()
+            from io import StringIO
+            df      = pd.read_csv(StringIO(resp.text))
+            symbols = df["Symbol"].str.strip().tolist()
+            if len(symbols) > 100:
+                df.to_csv(cache_file, index=False)
+                return symbols
+        except Exception:
+            continue
+
+    # Stale cache fallback
+    if os.path.exists(cache_file):
+        try:
+            return pd.read_csv(cache_file)["Symbol"].str.strip().tolist()
+        except Exception:
+            pass
+
+    # Hard fallback — Nifty 50 only
+    return [
+        "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
+        "BHARTIARTL","SBIN","WIPRO","HCLTECH","LT",
+        "AXISBANK","KOTAKBANK","ASIANPAINT","MARUTI","BAJFINANCE",
+        "TITAN","SUNPHARMA","NESTLEIND","ULTRACEMCO","POWERGRID",
+        "NTPC","COALINDIA","ONGC","TATAMOTORS","ADANIENT",
+        "BAJAJFINSV","DIVISLAB","DRREDDY","CIPLA","EICHERMOT",
+        "HEROMOTOCO","HINDALCO","JSWSTEEL","M&M","TECHM",
+        "BRITANNIA","GRASIM","INDUSINDBK","ITC","TATACONSUM",
+        "HDFCLIFE","SBILIFE","ICICIGI","BAJAJ-AUTO","TRENT",
+        "DMART","ADANIPORTS","INDIGO","TATASTEEL","LTM",
+    ]
+
+
+# Loaded once at import — available as config.UNIVERSE everywhere
+UNIVERSE = _fetch_nifty500()
 
 # ─────────────────────────────────────────────
-# SCHEDULING
+# OTHER SETTINGS
 # ─────────────────────────────────────────────
-# Rebalance runs on last trading day of each month
-REBALANCE_HOUR   = 9    # 9:30 AM IST
-REBALANCE_MINUTE = 30
+NIFTY50_SYMBOL   = "NIFTY 50"
+NIFTY50_YFTICKER = "^NSEI"
 
-# Daily login refresh time
-LOGIN_HOUR   = 8
-LOGIN_MINUTE = 0
+REBALANCE_HOUR          = 9
+REBALANCE_MINUTE        = 30
+LOGIN_HOUR       = 8
+LOGIN_MINUTE     = 0
 
-# Log file paths
-ORDER_LOG_FILE    = "logs/orders.csv"
+ORDER_LOG_FILE     = "logs/orders.csv"
 PORTFOLIO_LOG_FILE = "logs/portfolio.csv"
-BOT_LOG_FILE      = "logs/bot.log"
+BOT_LOG_FILE       = "logs/bot.log"
