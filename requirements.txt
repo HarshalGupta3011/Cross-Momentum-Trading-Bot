@@ -8,3 +8,4 @@ pyotp>=2.9.0
 selenium>=4.0.0
 webdriver-manager>=4.0.0
 pyqt5>=5.9
+matplotlib>=3.0.0
